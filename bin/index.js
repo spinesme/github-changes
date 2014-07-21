@@ -98,6 +98,10 @@ opts = parser
     help: 'only include pull requests'
   , flag: true
   })
+  .option('only-text', {
+    help: 'Simplified text(neither users or urls)'
+  , flag: true
+  })
   .option('use-commit-body', {
     help: 'use the commit body of a merge instead of the message - "Merge branch..."'
   , flag: true
@@ -294,6 +298,29 @@ var prFormatter = function(data) {
   return output.trim();
 };
 
+var onlyTextFormatter = function(data) {
+  var currentTagName = '';
+  var output = "## Change Log\n";
+  data.forEach(function(pr){
+    if (pr.tag === null) {
+      currentTagName = opts['tag-name'];
+      output+= "\n### " + opts['tag-name'];
+      output+= "\n";
+    } else if (pr.tag.name != currentTagName) {
+      currentTagName = pr.tag.name;
+      output+= "\n### " + pr.tag.name
+      output+= " (" + pr.tag.date.utc().format("YYYY/MM/DD HH:mm Z") + ")";
+      output+= "\n";
+    }
+
+    output += "- [#" + pr.number + "] " + pr.title
+    if (opts['issue-body'] && pr.body && pr.body.trim()) output += "\n\n    >" + pr.body.trim().replace(/\n/ig, "\n    > ") +"\n";
+
+    output += "\n";
+  });
+  return output.trim();
+};
+
 var getCommitsInMerge = function(mergeCommit) {
   // store reachable commits
   var store1 = {};
@@ -402,6 +429,8 @@ var commitFormatter = function(data) {
 };
 
 var formatter = function(data) {
+  console.log(data);
+  if (opts['only-text']) return onlyTextFormatter(data);
   if (opts.data === 'commits') return commitFormatter(data);
   return prFormatter(data);
 };
