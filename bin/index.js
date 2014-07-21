@@ -301,21 +301,65 @@ var prFormatter = function(data) {
 var onlyTextFormatter = function(data) {
   var currentTagName = '';
   var output = "## Change Log\n";
-  data.forEach(function(pr){
-    if (pr.tag === null) {
+  data.forEach(function(commit){
+    var isMerge = (commit.parents.length > 1);
+    var isPull = isMerge && /^Merge pull request #/i.test(commit.commit.message);
+    // exits
+    if ((opts.merges === false) && isMerge) return '';
+    if ((opts['only-merges']) && commit.parents.length < 2) return '';
+    if (
+      (opts['only-pulls'])
+    && !isPull
+    ) return '';
+
+    // choose message content
+    var messages = commit.commit.message.split('\n');
+    var message = messages.shift().trim();
+
+    if (opts['use-commit-body'] && commit.parents.length > 1) {
+      message = messages.join(' ').trim() || message;
+    }
+
+    if (commit.tag === null) {
       currentTagName = opts['tag-name'];
       output+= "\n### " + opts['tag-name'];
       output+= "\n";
-    } else if (pr.tag.name != currentTagName) {
-      currentTagName = pr.tag.name;
-      output+= "\n### " + pr.tag.name
-      output+= " (" + pr.tag.date.utc().format("YYYY/MM/DD HH:mm Z") + ")";
+    } else if (commit.tag.name != currentTagName) {
+      currentTagName = commit.tag.name;
+      output+= "\n### " + commit.tag.name
+      output+= " (" + commit.tag.date.utc().format("YYYY/MM/DD HH:mm Z") + ")";
       output+= "\n";
     }
 
-    output += "- [#" + pr.number + "] " + pr.title
-    if (opts['issue-body'] && pr.body && pr.body.trim()) output += "\n\n    >" + pr.body.trim().replace(/\n/ig, "\n    > ") +"\n";
+    // if commit is a merge then find all commits that belong to the merge
+    // and extract authors out of those. Do this for --only-merges and for
+    // --only-pulls
+    var authors = {};
+    if (isMerge && (opts['only-merges'] || opts['only-pulls'])) {
+      getCommitsInMerge(commit).forEach(function(c){
+        // ignore the author of a merge commit, they might have reviewed,
+        // resolved conflicts, and merged, but I don't think this alone
+        // should result in them being considered one of the authors in
+        // the pull request
+        if (c.parents.length > 1) return;
 
+        if (c.author && c.author.login) {
+          authors[c.author.login] = true;
+        }
+      });
+    }
+    authors = Object.keys(authors);
+
+    // if it's a pull request, then the link should be to the pull request
+    if (isPull) {
+      var prNumber = commit.commit.message.split('#')[1].split(' ')[0];
+      var author = (commit.commit.message.split(/\#\d+\sfrom\s/)[1]||'').split('/')[0];
+      output += "- [#" + prNumber + "] " + message;
+    } else { //otherwise link to the commit
+      output += "- [" + commit.sha.substr(0, 7) + "](" + commit.html_url + ") " + message;
+    }
+
+    // output += " " + moment(commit.commit.committer.date).utc().format("YYYY/MM/DD HH:mm Z");
     output += "\n";
   });
   return output.trim();
@@ -429,7 +473,6 @@ var commitFormatter = function(data) {
 };
 
 var formatter = function(data) {
-  console.log(data);
   if (opts['only-text']) return onlyTextFormatter(data);
   if (opts.data === 'commits') return commitFormatter(data);
   return prFormatter(data);
